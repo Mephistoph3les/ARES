@@ -23,11 +23,13 @@ def get_mean(file_name, reference_file_name):
     ref_mean = reference.loc[:, 'Width'].mean()
     
     d = 75*10**(-3) # distance burj <-> detector in m
-    data.loc[:, ["Width"]] = np.sqrt((data.loc[:, ["Width"]])**2 - (ref_mean)**2)      #background deduction
-    data_mean = data.loc[:, 'Width'].mean() *(55*10**(-6))
-    mean = np.arctan(data_mean/d)*10**(+3)
-    
-    return mean**2
+    data.loc[:, ["Width"]] = (np.sqrt((data.loc[:, ["Width"]])**2 - (ref_mean)**2)) *(55*10**(-6))     #background deduction
+    data.loc[:, ["Width"]] = (np.arctan(data.loc[:, ["Width"]]/d)*10**(+3))
+    data_mean = data.loc[:, 'Width'].mean() 
+    data_std = data.loc[:, 'Width'].std() 
+    N = data.shape[0]
+
+    return data_mean**2, data_std, N
 
 def highland(material_budget):
     
@@ -50,11 +52,19 @@ if __name__ == '__main__':
 
     n = len(files_list)
     means_list=([])
+    std_list=([])
+    N_list=([])
 
     for i in range (n):
-        means_list.append(get_mean(files_list[i], reference_file_name))
+        means_list.append(get_mean(files_list[i], reference_file_name)[0])
+        std_list.append(get_mean(files_list[i], reference_file_name)[1])
+        N_list.append(get_mean(files_list[i], reference_file_name)[2])
     print("Thats the list of means of the data width: ")
     print(means_list)
+    print("The list of standard deviations of those: ")
+    print(std_list)
+    print("The list of sample N's: ")
+    print(N_list)
 
 
     radiation_length_PEEK = 319.6                                       #in mm
@@ -86,7 +96,7 @@ if __name__ == '__main__':
 
     fig, ax = plt.subplots(figsize=(10,10), layout='constrained')
     ax.scatter(means_list, material_budget_list, label = 'Burj (PEEK)') #Plotting data onto the axes
-    ax.errorbar(means_list, material_budget_list, yerr = material_budget_error_list, fmt="o")
+    ax.errorbar(means_list, material_budget_list, yerr = material_budget_error_list , xerr = std_list/(np.sqrt(N_list)) , fmt="o")
     ax.plot(highland_prediction_list, material_budget_list, label = 'Highland')
     ax.set_xscale('log')
     ax.set_yscale('log')

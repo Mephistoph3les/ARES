@@ -5,9 +5,11 @@ import sys
 import matplotlib.pyplot as plt 
 import math
 import numpy as np
+import time
 
 
-def time_cut_of_data(file_name, logbook_name, log_starting_point):
+def time_cut_of_data(file_name, logbook_name, log_starting_point, file_number):
+    # sourcery skip: for-index-replacement, list-comprehension
     data = pd.read_csv(file_name, sep='\s+', names= ['Event', 'Macropulse', 'Width', 'Timestamp'])
     logbook = pd.read_csv(logbook_name, sep='\s+', skiprows=(16+log_starting_point-1) , names= ['Event', 'X Position (mm)', 'Y Index', '[ADD 1] Position (deg)', '[ADD 2] Position (mm)' , '[ADD 3] Count ()', '[ADD 4] Charge (pC)', 'UNIX Time Stamp (seconds)'])
     logbook['Event'] = logbook['Event'].astype(int)
@@ -17,17 +19,51 @@ def time_cut_of_data(file_name, logbook_name, log_starting_point):
     list_of_x_positions = ([35, 51.5 , 68, 84.5, 101, 117.5, 134, 150.5, 167, 183.5, 200, 216.5, 233, 249.5])       #266 is skipped because that is the second zero/reference measurement
     for i in range(len(list_of_x_positions)):
         if i==0:
-            help_list.extend((logbook.loc[logbook['X Position (mm)'] == list_of_x_positions[i]], logbook.loc[logbook['X Position (mm)'] == 266],))
+            help_list.extend((logbook.loc[logbook['X Position (mm)'] == list_of_x_positions[i]], logbook.loc[logbook['X Position (mm)'] == 266]))
             help = pd.concat(help_list)
             logbook_list.append(help)
         else:
             logbook_list.append(logbook.loc[logbook['X Position (mm)'] == list_of_x_positions[i]])
-            
+
     list_of_boundaries=([])
     for i in range(len(logbook_list)):
         list_of_boundaries.append(get_boundaries(logbook_list[i]))
+    if file_number==0:          #file 0 is nickel overnight scan
+        timestamp_offset = 1712160150
+    elif file_number==1:        #file 1 is aluminum shortscan1
+        timestamp_offset = 1712224363
+    elif file_number==2:        #file 2 is aluminum shortscan2
+        timestamp_offset = 1712235885.5
+        
+    data_timestamps = data.loc[:, "Timestamp"]
+    length_of_dataset = data_timestamps.shape[0]
+    data_timestamp_array = data_timestamps.to_numpy()  
+    thickness_region_allocation = ([])
     
-    print(list_of_boundaries)
+    for i in range(length_of_dataset-1):                                  #iteration over every datapoint of the measurement
+        if i==500:
+            print(thickness_region_allocation)
+            break
+        for m in range(len(list_of_boundaries)-1):                        #iteration over every x position of the stage in logfile corresponding to material thickness 
+
+            for l in range(len(list_of_boundaries[m][0])-1):              #iteration over every start and end point of measurement repetition
+                
+                start = list_of_boundaries[m][0][l] - timestamp_offset
+                end = list_of_boundaries[m][1][l] - timestamp_offset
+                print("Comparing:", start, "<= ", data_timestamp_array[i], "<=", end)
+                
+                if start <= data_timestamp_array[i] <= end:
+                    thickness_region_allocation.append(list_of_x_positions[m])
+                    print("added", list_of_x_positions[m], "to slot: ", i)
+                else:
+                    print("skipped width for: ", i)
+    
+    print("Final thickness region allocation:" , thickness_region_allocation)
+    
+    print(data)
+    data.insert(4, "Material Thickness", [thickness_region_allocation], True)
+    print(data)
+    
 
 def get_boundaries(logbook_list):    
     log = logbook_list.loc[:, "Event"]              #Take a slice with only the Event numbers
@@ -87,11 +123,13 @@ def highland(material_budget):
     return Theta**2, beta, momentum
 
 if __name__ == '__main__':
+    
+    start_time = time.time()
     files_list=(['Nickel_data/output_measurement_203.dat', 'Aluminum_data/output_measurement_211.dat', 'Aluminum_data/output_measurement_221.dat'])
     logbook_files_list = (['Nickel_data/eCTLogger_ni_overnight.txt', 'Aluminum_data/eCTLogger_al_shortscan1.txt', 'Aluminum_data/eCTLogger_al_shortscan2.txt'])
     list_of_log_starting_points = ([17, 654, 492])
     dataframe_list_list = ([])
-    dataframe_list_list.append(time_cut_of_data(files_list[0],logbook_files_list[0],list_of_log_starting_points[0]))
+    dataframe_list_list.append(time_cut_of_data(files_list[1],logbook_files_list[1],list_of_log_starting_points[1], 1))
     
 
     radiation_length_nickel = 35.3                                      #in mm
@@ -134,3 +172,5 @@ if __name__ == '__main__':
     #ax.set_title('Calibration Plot')
     #ax.legend()
     #plt.show()
+    end_time = time.time()
+    print("Computing time was: ", end_time - start_time)

@@ -3,4 +3,4 @@ set output 'metalsheetladderplot_overnight_nickel.png'
 set title 'Nickel Scattering Widths Dataset 2'
 set xlabel "Time"
 set ylabel "Width"
-plot "output_measurement_203.dat" u 2:3 t "metal sheets" lc "red" pt 1
+plot "Nickel_data/output_measurement_203.dat" u 2:3 t "metal sheets" lc "red" pt 1

@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import math
 import numpy as np
 import time
+from multiprocessing import Pool, cpu_count
 
 
 def time_cut_of_data(file_name, logbook_name, log_starting_point, file_number):
@@ -30,10 +31,13 @@ def time_cut_of_data(file_name, logbook_name, log_starting_point, file_number):
         list_of_boundaries.append(get_boundaries(logbook_list[i]))
     if file_number==0:          #file 0 is nickel overnight scan
         timestamp_offset = 1712160150
+        output_filename = 'Nickel_data/output_measurement_203_amended.csv'
     elif file_number==1:        #file 1 is aluminum shortscan1
         timestamp_offset = 1712224363
+        output_filename = 'Aluminum_data/output_measurement_211_amended.csv'
     elif file_number==2:        #file 2 is aluminum shortscan2
         timestamp_offset = 1712235885.5
+        output_filename = 'Aluminum_data/output_measurement_221_amended.csv'
         
     data_timestamps = data.loc[:, "Timestamp"]
     length_of_dataset = data_timestamps.shape[0]
@@ -41,29 +45,39 @@ def time_cut_of_data(file_name, logbook_name, log_starting_point, file_number):
     thickness_region_allocation = ([])
     
     for i in range(length_of_dataset-1):                                  #iteration over every datapoint of the measurement
-        if i==500:
-            print(thickness_region_allocation)
+        if i==100:
             break
+        found = False
         for m in range(len(list_of_boundaries)-1):                        #iteration over every x position of the stage in logfile corresponding to material thickness 
-
+            if found == True:
+                break
             for l in range(len(list_of_boundaries[m][0])-1):              #iteration over every start and end point of measurement repetition
-                
+                if found == True:
+                    break
                 start = list_of_boundaries[m][0][l] - timestamp_offset
                 end = list_of_boundaries[m][1][l] - timestamp_offset
                 print("Comparing:", start, "<= ", data_timestamp_array[i], "<=", end)
-                
                 if start <= data_timestamp_array[i] <= end:
                     thickness_region_allocation.append(list_of_x_positions[m])
                     print("added", list_of_x_positions[m], "to slot: ", i)
+                    found = True
                 else:
                     print("skipped width for: ", i)
+        if found == False:
+            thickness_region_allocation.append("NaN")
+            print("added", list_of_x_positions[m], "to slot: ", i)
     
     print("Final thickness region allocation:" , thickness_region_allocation)
+    print("Then length of that list is: ", len(thickness_region_allocation))
     
+    rows_to_drop = data.shape[0]- len(thickness_region_allocation)
+    data.drop(data.tail(rows_to_drop).index, inplace = True)
+    print("dropped ", rows_to_drop, " rows from data")
+    data.insert(4, "Material Thickness", thickness_region_allocation, True)
     print(data)
-    data.insert(4, "Material Thickness", [thickness_region_allocation], True)
-    print(data)
+    data.to_csv(output_filename, index=False) 
     
+    return(data)
 
 def get_boundaries(logbook_list):    
     log = logbook_list.loc[:, "Event"]              #Take a slice with only the Event numbers
@@ -123,15 +137,23 @@ def highland(material_budget):
     return Theta**2, beta, momentum
 
 if __name__ == '__main__':
-    
     start_time = time.time()
     files_list=(['Nickel_data/output_measurement_203.dat', 'Aluminum_data/output_measurement_211.dat', 'Aluminum_data/output_measurement_221.dat'])
-    logbook_files_list = (['Nickel_data/eCTLogger_ni_overnight.txt', 'Aluminum_data/eCTLogger_al_shortscan1.txt', 'Aluminum_data/eCTLogger_al_shortscan2.txt'])
-    list_of_log_starting_points = ([17, 654, 492])
-    dataframe_list_list = ([])
-    dataframe_list_list.append(time_cut_of_data(files_list[1],logbook_files_list[1],list_of_log_starting_points[1], 1))
-    
+    ask = input("Do you want to do the time slicing of measurement data (no skips to analysis)?  ")
+    if ask.lower() in ["y","yes"]:
+        print("0 for nickel overnight \n1 for aluminum scan1 \n2 for aluminum scan2 ")
+        dataset = int(input("Which dataset do you want to slice? "))
+        answer = input("This computation will take a long time to do, continue? ")
+        if answer.lower() in ["y","yes"]:
+            logbook_files_list = (['Nickel_data/eCTLogger_ni_overnight.txt', 'Aluminum_data/eCTLogger_al_shortscan1.txt', 'Aluminum_data/eCTLogger_al_shortscan2.txt'])
+            list_of_log_starting_points = ([17, 654, 492])
+            data = time_cut_of_data(files_list[dataset],logbook_files_list[dataset],list_of_log_starting_points[dataset], dataset)
+    else:
+        print("0 for nickel overnight \n1 for aluminum scan1 \n2 for aluminum scan2 ")
+        ask = input("Which dataset do you want to analyse? ")
+        data = pd.read_csv(files_list[ask], sep='\s+', names= ['Event', 'Macropulse', 'Width', 'Timestamp', 'Material Thickness'])
 
+    
     radiation_length_nickel = 35.3                                      #in mm
     error_in_radiation_length = 0.05                                    # ~2% error
     radiation_length_aluminum = 8.9                                     #in mm
@@ -173,4 +195,4 @@ if __name__ == '__main__':
     #ax.legend()
     #plt.show()
     end_time = time.time()
-    print("Computing time was: ", end_time - start_time)
+    print("Computing time was: ", end_time - start_time, " s")

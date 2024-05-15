@@ -24,25 +24,20 @@ def time_cut_of_data(file_name, logbook_name, log_starting_point, file_number, l
         else:
             logbook_list.append(logbook.loc[logbook['X Position (mm)'] == list_of_x_positions[i]])
 
-    list_of_boundaries=([])
-    for i in range(len(logbook_list)):
-        list_of_boundaries.append(get_boundaries(logbook_list[i]))
-    if file_number==0:          #file 0 is nickel overnight scan
-        timestamp_offset = 1712160150
-        output_filename = 'Nickel_data/output_measurement_203_amended.csv'
-    elif file_number==1:        #file 1 is aluminum shortscan1
-        timestamp_offset = 1712224363
-        output_filename = 'Aluminum_data/output_measurement_211_amended.csv'
-    elif file_number==2:        #file 2 is aluminum shortscan2
-        timestamp_offset = 1712235885.5
-        output_filename = 'Aluminum_data/output_measurement_221_amended.csv'
+    list_of_boundaries = [get_boundaries(logbook) for logbook in logbook_list]
+    
+    file_details = {
+        0: (1712160150, 'Nickel_data/output_measurement_203_amended.csv'),
+        1: (1712224363, 'Aluminum_data/output_measurement_211_amended.csv'),
+        2: (1712235885.5, 'Aluminum_data/output_measurement_221_amended.csv')}
+    timestamp_offset, output_filename = file_details[file_number]
 
     data_timestamps = data.loc[:, "Timestamp"]
     length_of_dataset = data_timestamps.shape[0]
     data_timestamp_array = data_timestamps.to_numpy()
-    
+
     print(list_of_x_positions)
-    
+
     scan = timestamp_scan(list_of_x_positions, list_of_material_thicknesses, list_of_boundaries, timestamp_offset, length_of_dataset, data_timestamp_array)
     thickness_region_allocation = scan[0]
     thickness_allocation = scan[1]
@@ -57,8 +52,8 @@ def time_cut_of_data(file_name, logbook_name, log_starting_point, file_number, l
     return data
 @jit
 def timestamp_scan(list_of_x_positions, list_of_material_thicknesses, list_of_boundaries, timestamp_offset, length_of_dataset, data_timestamp_array):
-    thickness_region_allocation = ([])
-    thickness_allocation = ([])
+    thickness_region_allocation = []
+    thickness_allocation = []
     
     for i in range(length_of_dataset):                                  #iteration over every datapoint of the measurement
         found = False
@@ -66,21 +61,20 @@ def timestamp_scan(list_of_x_positions, list_of_material_thicknesses, list_of_bo
             if found == True:
                 break
             for l in range(len(list_of_boundaries[m][0])):              #iteration over every start and end point of measurement repetition
-                if found == True:
-                    break
                 start = list_of_boundaries[m][0][l] - timestamp_offset
                 end = list_of_boundaries[m][1][l] - timestamp_offset
                 print("Comparing:", start, "<= ", data_timestamp_array[i], "<=", end)
                 if start <= data_timestamp_array[i] <= end:
-                    thickness_region_allocation.append(str(list_of_x_positions[m]))
-                    thickness_allocation.append(str(list_of_material_thicknesses[m]))
+                    thickness_region_allocation.append(list_of_x_positions[m])
+                    thickness_allocation.append(list_of_material_thicknesses[m])
                     print("added", list_of_x_positions[m], "to slot: ", i)
                     found = True
+                    break
                 else:
                     print("skipped width for: ", i)
-        if found == False:
-            thickness_region_allocation.append('NaN')
-            thickness_allocation.append('NaN')
+        if not found:
+            thickness_region_allocation.append(0)
+            thickness_allocation.append(0)
 
     return(thickness_region_allocation, thickness_allocation)
 

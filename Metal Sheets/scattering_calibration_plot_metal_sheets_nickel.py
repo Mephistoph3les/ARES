@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import math
 import numpy as np
 import time
+import csv
 
 
 
@@ -125,32 +126,90 @@ def get_mean(file_name, reference_file_name):
     return data_mean**2, data_std, N
 
 def separate_data(data, list_of_x_positions):
-    data_separated_list = ([])
-    for i in range(len(list_of_x_positions)):
-        data_separated_list.append(data.loc[data['Material Thickness'] == list_of_x_positions[i]])
-    return data_separated_list
+    return [
+        data.loc[data['Stage x Position'] == list_of_x_positions[i]]
+        for i in range(len(list_of_x_positions))
+    ]
 
-def ladderplot(data_list, dataset, list_of_x_positions):
+def ladderplot(data_list, dataset, list_of_x_positions, list_of_material_thicknesses):
     material = "Nickel" if dataset==0 else "Aluminum"
     widths=[]
     material_thicknesses=[]
     help=[]
-    for i in range(len(list_of_x_positions)-1):
+    ladder_filename = f"ladderplot_{material.lower()}_dataset_{str(dataset)}"
+
+    for i in range(len(list_of_x_positions)):
         help = data_list[i].loc[:, "Width"]
         help = help.to_numpy()
         widths.append(help)
-        
-        help2 = data_list[i].loc[:, "Material Thickness"]
+
+        help2 = data_list[i].loc[:, "Stage x Position"]
         help2 = help2.to_numpy()
         material_thicknesses.append(help2)
 
     fig, ax = plt.subplots(figsize=(10,10), layout='constrained')
-    for i in range(len(list_of_x_positions)-1):
-        ax.scatter(widths[i], material_thicknesses[i], label = ('Stage x position: ', list_of_x_positions[i]))
-    ax.set_xlabel('Width', style='normal')
-    ax.set_ylabel('Material Thickness')
-    ax.set_title(('Ladderplot', material, ' of dataset ', dataset ))
+    for i in range(len(list_of_x_positions)):
+        ax.scatter(widths[i], material_thicknesses[i], label = ('Material Thickness (in mm): ', list_of_material_thicknesses[i]))
+    ax.set_xlabel('Width (in pixels)', style='normal')
+    ax.set_ylabel('Stage x Position (in mm)')
+    ax.set_title(f'Ladderplot {material} of dataset {str(dataset)}')
     ax.legend()
+    ax.grid()
+    ax.set_axisbelow(True)
+    if dataset == 1 or dataset == 2:
+        plt.xlim([0, 35])
+    else:  
+        plt.xlim([0, 100])
+    plt.savefig(ladder_filename)
+    plt.show()
+    
+def calibrationplot(material_nickel, material_aluminum, means_list_nickel, means_list_aluminum):   
+    radiation_length_nickel = 14.24                       #in mm                                   
+    radiation_length_aluminum = 88.97                     #in mm   
+    error_in_radiation_length = 0.002                     #considering the decimal value given by pdg 
+    error_in_material_thickness = 0.0002                  #error in mm
+    
+    m = len(list_of_material_thicknesses)
+
+    material_budget_nickel = ([])
+    material_budget_aluminum = ([])
+    highland_prediction_list = ([])
+    material_budget_error_nickel = ([])
+    material_budget_error_aluminum = ([])
+    for i in range (1, m):
+        material_budget_nickel.append(material_nickel[i]/radiation_length_nickel)
+        material_budget_aluminum.append(material_aluminum[i]/radiation_length_aluminum)
+        material_budget_error_nickel = np.sqrt(((error_in_material_thickness/radiation_length_nickel)**2+(error_in_radiation_length*material_nickel[i]/(radiation_length_nickel)**2)**2))
+        material_budget_error_aluminum = np.sqrt(((error_in_material_thickness/radiation_length_aluminum)**2+(error_in_radiation_length*material_aluminum[i]/(radiation_length_aluminum)**2)**2))
+        material_budget_error_nickel.append(material_budget_error_nickel)
+        material_budget_error_aluminum.append(material_budget_error_aluminum)
+        highland_prediction_list.append(highland(material_budget_nickel[i-1])[0])       #retrieves Theta**2 from Highland prediction
+        
+    with open('calibration_data_nickel', 'w') as myfile:
+        wr = csv.writer(myfile, quoting=csv.QUOTE_ALL)
+        wr.writerows('Material Budget Nickel', 'Material Budget error')
+        wr.writerows(material_budget_nickel, material_budget_error_nickel)
+    with open('calibration_data_aluminum', 'w') as myfile:
+        wr = csv.writer(myfile, quoting=csv.QUOTE_ALL)
+        wr.writerows('Material Budget Aluminum', 'Material Budget error')
+        wr.writerows(material_budget_aluminum, material_budget_error_nickel)
+
+    fig, ax = plt.subplots(figsize=(10,10), layout='constrained')
+    ax.scatter( means_list_nickel, material_budget_nickel, label = 'Nickel') #Plotting data onto the axes
+    ax.errorbar( means_list_nickel, material_budget_nickel, yerr = material_budget_error_nickel , fmt="o")
+    ax.scatter( means_list_aluminum, material_budget_aluminum, label = 'Nickel') #Plotting data onto the axes
+    ax.errorbar( means_list_aluminum, material_budget_aluminum, yerr = material_budget_error_aluminum , fmt="o")
+    ax.plot(highland_prediction_list, material_budget_nickel, label = 'Highland Prediction')
+    ax.set_xscale('log')
+    ax.set_yscale('log')
+    ax.set_xlabel('$mean^2$ [$mrad^2$]', style='normal')            #think of a new name for mean... it's technically not a mean
+    ax.set_ylabel('Material Budget')
+    ax.set_title('Calibration Plot')
+    ax.legend()
+    ax.grid()
+    ax.set_axisbelow(True)
+    #plt.xlim([0, 35])
+    plt.savefig('metal_sheet_calibration_plot')
     plt.show()
 
 def highland(material_budget):
@@ -167,15 +226,17 @@ def highland(material_budget):
 if __name__ == '__main__':
     start_time = time.time()
     list_of_x_positions = ([35.0, 51.5 , 68.0, 84.5, 101.0, 117.5, 134.0, 150.5, 167.0, 183.5, 200.0, 216.5, 233.0, 249.5])       #266 is skipped because that is the second zero/reference measurement
-    radiation_length_nickel = 35.3                                      #in mm
-    error_in_radiation_length = 0.05                                    # ~2% error
-    radiation_length_aluminum = 8.9                                     #in mm
-    list_of_material_thicknesses = ([0.0 ,0.025, 0.075, 0.05, 0.15, 0.1, 0.35, 0.25, 0.75, 0.5, 1.5, 1.0, 3.0, 2.0])     #in mm (CAREFUL! ALUMINUM HAS DIFFERENT THICKNESSES WHICH ARE NOT IMPLEMENTED RN)
+    list_of_material_thicknesses_nickel = ([0.0, 0.025, 0.075, 0.05, 0.15, 0.1, 0.35, 0.25, 0.75, 0.5, 1.5, 1.0, 3.0, 2.0])     #in mm 
+    list_of_material_thicknesses_aluminum = ([0.0, 0.025, 0.095, 0.07, 0.27, 0.2, 0.6, 0.4, 1.4, 1.0, 3.0, 2.0, 6.0, 4.0])
     files_list=(['Nickel_data/output_measurement_203.dat', 'Aluminum_data/output_measurement_211.dat', 'Aluminum_data/output_measurement_221.dat'])
     ask = input("Do you want to do the time slicing of measurement data (no skips to analysis)?  ")
     if ask.lower() in ["y","yes"]:
         print("0 for nickel overnight \n1 for aluminum scan1 \n2 for aluminum scan2 ")
         dataset = int(input("Which dataset do you want to slice? "))
+        if dataset == 0:
+            list_of_material_thicknesses = list_of_material_thicknesses_nickel
+        else:
+            list_of_material_thicknesses = list_of_material_thicknesses_aluminum
         answer = input("This computation will take a long time to do, continue? ")
         if answer.lower() in ["y","yes"]:
             logbook_files_list = (['Nickel_data/eCTLogger_ni_overnight.txt', 'Aluminum_data/eCTLogger_al_shortscan1.txt', 'Aluminum_data/eCTLogger_al_shortscan2.txt'])
@@ -184,51 +245,30 @@ if __name__ == '__main__':
     else:
         print("0 for nickel overnight \n1 for aluminum scan1 \n2 for aluminum scan2 ")
         dataset = int(input("Which dataset do you want to analyse? "))
+        if dataset == 0:
+            list_of_material_thicknesses = list_of_material_thicknesses_nickel
+        else:
+            list_of_material_thicknesses = list_of_material_thicknesses_aluminum
         files_list_amen=(['Nickel_data/output_measurement_203_amended.csv', 'Aluminum_data/output_measurement_211_amended.csv', 'Aluminum_data/output_measurement_221_amended.csv'])
         data = pd.read_csv(files_list_amen[dataset], sep=',', skiprows=(1), names= ['Event', 'Timestamp', 'Width', 'Intensity', 'Stage x Position', 'Material Thickness'])
         data_list = separate_data(data, list_of_x_positions)        
         ask = input("Do you want to create a ladderplot? ")
         if ask.lower() in ["y","yes"]:
-            ladderplot(data_list, dataset, list_of_x_positions)
+            ladderplot(data_list, dataset, list_of_x_positions, list_of_material_thicknesses)
+        ask = input("Do you want to produce a calibration plot? ")
+        if ask.lower() in ["y","yes"]:
+            n = len(files_list)
+            means_list=([])
+            std_list=([])
+            N_list=([])
 
-
-    
-#    list_of_material_thicknesses_shortscan = ([2, 3, 1, 1.5, 0.5, 0.75, 0.25, 0.35, 0.1, 0.15, 0.05, 0.075, 0.025, 0])     #in mm
-    error_in_material_thickness = 0.0005                                   #error in mm
-    
-    m = len(list_of_material_thicknesses)
-
-    material_budget_list = ([])
-    highland_prediction_list = ([])
-    material_budget_error_list = ([])
-    for i in range (1, m-1):
-        material_budget_list.append(list_of_material_thicknesses[i]/radiation_length_nickel)
-        material_budget_error = np.sqrt(((error_in_material_thickness/radiation_length_nickel)**2+(error_in_radiation_length*list_of_material_thicknesses[i]/(radiation_length_nickel)**2)**2))
-        material_budget_error_list.append(material_budget_error)
-        highland_prediction_list.append(highland(material_budget_list[i-1])[0])
-    #print("Thats the list of material budgets: ")
-    #print(material_budget_list)
-    #print("Thats the list of material budget errors: ")
-    #print(material_budget_error_list)
-    #print("Thats the list of highlands predictions: ")
-    #print(highland_prediction_list)
-    #print("")
-    #print("beta is: ", highland(material_budget_list[0])[1])
-    #print("electron momentum is: ", highland(material_budget_list[0])[2], "MeV")
-
-
-
-    #fig, ax = plt.subplots(figsize=(10,10), layout='constrained')
-    #ax.hist( material_budget_list, label = 'Nickel') #Plotting data onto the axes
-    #ax.errorbar( material_budget_list, yerr = material_budget_error_list , fmt="o")
-    #ax.plot(highland_prediction_list, material_budget_list, label = 'Highland')
-    #ax.set_xscale('log')
-    #ax.set_yscale('log')
-    #ax.set_xlabel('$mean^2$ [$mrad^2$]', style='normal')
-    #ax.set_ylabel('Material Budget')
-    #ax.set_title('Calibration Plot')
-    #ax.legend()
-    #plt.show()
+            for i in range (n):
+                means_list.append(get_mean(files_list[i], reference_file_name)[0])
+                std_list.append(get_mean(files_list[i], reference_file_name)[1])
+                N_list.append(get_mean(files_list[i], reference_file_name)[2])
+            means_list_nickel = get_mean(data_list)
+            means_list_aluminum = get_mean()
+            calibrationplot(list_of_material_thicknesses_nickel, list_of_material_thicknesses_aluminum, means_list_nickel, means_list_aluminum)
     end_time = time.time()
     print("Computing time was:  ", round(end_time - start_time, 2), " s")
     print("Which in minutes is: ", round((end_time - start_time)/60, 2) , " min")

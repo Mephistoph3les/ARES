@@ -276,7 +276,7 @@ def calibrationplot_both_alus(material_nickel, material_aluminum, means_list_nic
     plot_data_nickel = pd.DataFrame(data=nickel)
     aluminum_1 = {'Material Budget Aluminum': material_budget_aluminum, ' Material Budget error': material_budget_error_aluminum, ' mean-squared deviation angle from reference beam': means_list_aluminum_1, ' xerror': xerror_aluminum_1}
     plot_data_aluminum_1 = pd.DataFrame(data=aluminum_1)
-    aluminum_2 = {'Material Budget Aluminum': material_budget_aluminum, ' Material Budget error': material_budget_error_aluminum, ' mean-squared deviation angle from reference beam': means_list_aluminum_1, ' xerror': xerror_aluminum_1}
+    aluminum_2 = {'Material Budget Aluminum': material_budget_aluminum, ' Material Budget error': material_budget_error_aluminum, ' mean-squared deviation angle from reference beam': means_list_aluminum_2, ' xerror': xerror_aluminum_2}
     plot_data_aluminum_2 = pd.DataFrame(data=aluminum_2)
     plot_data_nickel.to_csv('Calibration_data/calibration_data_nickel.csv', sep=',', index=False)
     plot_data_aluminum_1.to_csv('Calibration_data/calibration_data_aluminum_1.csv', sep=',', index=False) 
@@ -394,7 +394,6 @@ if __name__ == '__main__':
             #tested it out and until this point of the code none of the dataframes has nan values
             
             for i in range (1, len(data_list)):
-                print(i)
                 help_nickel = get_mean(data_list_nickel[i], reference_nickel)
                 means_list_nickel.append(help_nickel[0])
                 std_list_nickel.append(help_nickel[1])

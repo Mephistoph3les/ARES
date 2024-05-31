@@ -108,15 +108,29 @@ def drop_unphysical_data(data_list):
     return new_data
 
 def get_mean(data, reference_mean):
-    
     d = 75*10**(-3) # distance metal sheets <-> detector in m
     data.loc[:, ["Width"]] = (np.sqrt((data.loc[:, ["Width"]])**2 - (reference_mean[0])**2)) *(55*10**(-6))     #background deduction
     data.loc[:, ["Width"]] = (np.arctan(data.loc[:, ["Width"]]/d)*10**(+3))
     data_mean = data.loc[:, 'Width'].mean() 
-    data_std = data.loc[:, 'Width'].std() 
+    data_std = data.loc[:, 'Width'].var() 
     N = data.shape[0]
 
-    return data_mean**2, data_std, N
+    return data_mean**2, data_std**2, N
+
+def get_mean_alu(data, data_2, reference_mean, reference_mean_2):
+    d = 75*10**(-3) # distance metal sheets <-> detector in m
+    data.loc[:, ["Width"]] = (np.sqrt((data.loc[:, ["Width"]])**2 - (reference_mean[0])**2)) *(55*10**(-6))     #background deduction
+    data_2.loc[:, ["Width"]] = (np.sqrt((data_2.loc[:, ["Width"]])**2 - (reference_mean_2[0])**2)) *(55*10**(-6))     #background deduction
+    data.loc[:, ["Width"]] = (np.arctan(data.loc[:, ["Width"]]/d)*10**(+3))
+    data_2.loc[:, ["Width"]] = (np.arctan(data_2.loc[:, ["Width"]]/d)*10**(+3))
+    frames = [data, data_2]
+    result = pd.concat(frames)
+    N = data.shape[0]
+    data_mean = result.loc[:, 'Width'].mean() 
+    data_std = result.loc[:, 'Width'].std() 
+
+    return data_mean**2, data_std**2, N
+
 
 def separate_data(data, list_of_x_positions):
     return [
@@ -183,23 +197,35 @@ def calibrationplot(material_nickel, material_aluminum, means_list_nickel, means
         highland_prediction_list_nickel.append(highland(material_budget_nickel[i-1])[0])       #retrieves Theta**2 from Highland prediction
         highland_prediction_list_aluminum.append(highland(material_budget_aluminum[i-1])[0])       #retrieves Theta**2 from Highland prediction
 
-    highland_prediction_list.extend(
-        (highland_prediction_list_nickel, highland_prediction_list_aluminum))
-    material_budget_for_highland.extend(
-        (material_budget_nickel, material_budget_aluminum))
-    nickel = {'Material Budget Nickel': material_budget_nickel, ' Material Budget error': material_budget_error_nickel, ' mean-squared deviation angle from reference beam': means_list_nickel, ' xerror': std_list_nickel/(np.sqrt(N_list_nickel))}
+    for i in range(len(highland_prediction_list_aluminum)):
+        highland_prediction_list.extend((highland_prediction_list_aluminum[i], highland_prediction_list_nickel[i],))
+        material_budget_for_highland.extend((material_budget_aluminum[i], material_budget_nickel[i]))
+
+    xerror_nickel = std_list_nickel/(np.sqrt(N_list_nickel))
+    xerror_aluminum = std_list_aluminum/(np.sqrt(N_list_aluminum))
+    nickel = {'Material Budget Nickel': material_budget_nickel, ' Material Budget error': material_budget_error_nickel, ' mean-squared deviation angle from reference beam': means_list_nickel, ' xerror': xerror_nickel}
     plot_data_nickel = pd.DataFrame(data=nickel)
-    aluminum = {'Material Budget Aluminum': material_budget_aluminum, ' Material Budget error': material_budget_error_aluminum, ' mean-squared deviation angle from reference beam': means_list_aluminum, ' xerror': std_list_aluminum/(np.sqrt(N_list_aluminum))}
+    aluminum = {'Material Budget Aluminum': material_budget_aluminum, ' Material Budget error': material_budget_error_aluminum, ' mean-squared deviation angle from reference beam': means_list_aluminum, ' xerror': xerror_aluminum}
     plot_data_aluminum = pd.DataFrame(data=aluminum)
     plot_data_nickel.to_csv('Calibration_data/calibration_data_nickel.csv', sep=',', index=False)
     plot_data_aluminum.to_csv('Calibration_data/calibration_data_aluminum.csv', sep=',', index=False) 
-
+    peek_data = pd.read_csv('../Burj/Calibration_data/calibration_data_peek.csv', sep=',', skiprows=(1), names= ['Material Budget Peek', 'Material Budget error', 'mean-squared deviation angle from reference beam', 'xerror'])
+    material_budget_peek = peek_data.iloc[:, 0]
+    material_budget_error_peek = peek_data.iloc[:, 1]
+    means_list_peek = peek_data.iloc[:, 2]
+    xerror_peek = peek_data.iloc[:, 3]
 
     fig, ax = plt.subplots(figsize=(10,10), layout='constrained')
+    
     ax.scatter( means_list_nickel, material_budget_nickel, label = 'Nickel') #Plotting data onto the axes
-    ax.errorbar( means_list_nickel, material_budget_nickel, yerr = material_budget_error_nickel , xerr = std_list_nickel/(np.sqrt(N_list_nickel)), fmt="o")
+    ax.errorbar( means_list_nickel, material_budget_nickel, yerr = material_budget_error_nickel , xerr = xerror_nickel, fmt="o")
+    
     ax.scatter( means_list_aluminum, material_budget_aluminum, label = 'Aluminum') #Plotting data onto the axes
-    ax.errorbar( means_list_aluminum, material_budget_aluminum, yerr = material_budget_error_aluminum , xerr = std_list_aluminum/(np.sqrt(N_list_aluminum)), fmt="o")
+    ax.errorbar( means_list_aluminum, material_budget_aluminum, yerr = material_budget_error_aluminum , xerr = xerror_aluminum, fmt="o")
+    
+    ax.scatter( means_list_peek, material_budget_peek, label = 'Peek') #Plotting data onto the axes
+    ax.errorbar( means_list_peek, material_budget_peek, yerr = material_budget_error_peek , xerr = xerror_peek, fmt="o")
+    
     ax.plot(highland_prediction_list, material_budget_for_highland, label = 'Highland Prediction')
     ax.set_xscale('log')
     ax.set_yscale('log')
@@ -213,8 +239,70 @@ def calibrationplot(material_nickel, material_aluminum, means_list_nickel, means
     plt.savefig('metal_sheet_calibration_plot')
     plt.show()
 
+def calibrationplot_both_alus(material_nickel, material_aluminum, means_list_nickel, means_list_aluminum_1, means_list_aluminum_2, std_list_nickel, _1, std_list_aluminum_2, N_list_nickel, N_list_aluminum_1, N_list_aluminum_2):
+    radiation_length_nickel = 14.24                       #in mm                                   
+    radiation_length_aluminum = 88.97                     #in mm   
+    error_in_radiation_length = 0.002                     #considering the decimal value given by pdg 
+    error_in_material_thickness = 0.0002                  #error in mm
+
+    m = len(list_of_material_thicknesses)
+
+    material_budget_nickel = ([])
+    material_budget_aluminum = ([])
+    highland_prediction_list = ([])
+    material_budget_for_highland = ([])
+    highland_prediction_list_nickel = ([])
+    highland_prediction_list_aluminum = ([])
+    material_budget_error_nickel = ([])
+    material_budget_error_aluminum = ([])
+    for i in range (1, m):
+        material_budget_nickel.append(material_nickel[i]/radiation_length_nickel)
+        material_budget_aluminum.append(material_aluminum[i]/radiation_length_aluminum)
+        material_budget_error_nickel_i = np.sqrt(((error_in_material_thickness/radiation_length_nickel)**2+(error_in_radiation_length*material_nickel[i]/(radiation_length_nickel)**2)**2))
+        material_budget_error_aluminum_i = np.sqrt(((error_in_material_thickness/radiation_length_aluminum)**2+(error_in_radiation_length*material_aluminum[i]/(radiation_length_aluminum)**2)**2))
+        material_budget_error_nickel.append(material_budget_error_nickel_i)
+        material_budget_error_aluminum.append(material_budget_error_aluminum_i)
+        highland_prediction_list_nickel.append(highland(material_budget_nickel[i-1])[0])       #retrieves Theta**2 from Highland prediction
+        highland_prediction_list_aluminum.append(highland(material_budget_aluminum[i-1])[0])       #retrieves Theta**2 from Highland prediction
+
+    for i in range(len(highland_prediction_list_aluminum)):
+        highland_prediction_list.extend((highland_prediction_list_aluminum[i], highland_prediction_list_nickel[i],))
+        material_budget_for_highland.extend((material_budget_aluminum[i], material_budget_nickel[i]))
+
+    xerror_nickel = std_list_nickel/(np.sqrt(N_list_nickel))
+    xerror_aluminum_1 = std_list_aluminum_1/(np.sqrt(N_list_aluminum_1))
+    xerror_aluminum_2 = std_list_aluminum_2/(np.sqrt(N_list_aluminum_2))
+    nickel = {'Material Budget Nickel': material_budget_nickel, ' Material Budget error': material_budget_error_nickel, ' mean-squared deviation angle from reference beam': means_list_nickel, ' xerror': xerror_nickel}
+    plot_data_nickel = pd.DataFrame(data=nickel)
+    aluminum_1 = {'Material Budget Aluminum': material_budget_aluminum, ' Material Budget error': material_budget_error_aluminum, ' mean-squared deviation angle from reference beam': means_list_aluminum_1, ' xerror': xerror_aluminum_1}
+    plot_data_aluminum_1 = pd.DataFrame(data=aluminum_1)
+    aluminum_2 = {'Material Budget Aluminum': material_budget_aluminum, ' Material Budget error': material_budget_error_aluminum, ' mean-squared deviation angle from reference beam': means_list_aluminum_1, ' xerror': xerror_aluminum_1}
+    plot_data_aluminum_2 = pd.DataFrame(data=aluminum_2)
+    plot_data_nickel.to_csv('Calibration_data/calibration_data_nickel.csv', sep=',', index=False)
+    plot_data_aluminum_1.to_csv('Calibration_data/calibration_data_aluminum_1.csv', sep=',', index=False) 
+    plot_data_aluminum_2.to_csv('Calibration_data/calibration_data_aluminum_2.csv', sep=',', index=False)
+
+    fig, ax = plt.subplots(figsize=(10,10), layout='constrained')
+    ax.scatter( means_list_nickel, material_budget_nickel, label = 'Nickel') #Plotting data onto the axes
+    ax.errorbar( means_list_nickel, material_budget_nickel, yerr = material_budget_error_nickel , xerr = xerror_nickel, fmt="o")
+    ax.scatter( means_list_aluminum_1, material_budget_aluminum, label = 'Aluminum_1') #Plotting data onto the axes
+    ax.errorbar( means_list_aluminum_1, material_budget_aluminum, yerr = material_budget_error_aluminum , xerr = xerror_aluminum_1, fmt="o")
+    ax.scatter( means_list_aluminum_2, material_budget_aluminum, label = 'Aluminum_2') #Plotting data onto the axes
+    ax.errorbar( means_list_aluminum_2, material_budget_aluminum, yerr = material_budget_error_aluminum , xerr = xerror_aluminum_2, fmt="o")
+    ax.plot(highland_prediction_list, material_budget_for_highland, label = 'Highland Prediction')
+    ax.set_xscale('log')
+    ax.set_yscale('log')
+    ax.set_xlabel('$mean^2$ deviation angle from reference beam [$mrad^2$]', style='normal')            #think of a new name for mean... it's technically not a mean
+    ax.set_ylabel('Material Budget')
+    ax.set_title('Calibration Plot')
+    ax.legend()
+    ax.grid()
+    ax.set_axisbelow(True)
+    #plt.xlim([0, 35])
+    plt.savefig('metal_sheet_calibration_plot_both_alu_datasets')
+    plt.show()
+
 def highland(material_budget):
-    
     beam_energy_MeV = 154.5                                                                     #beam energy in MeV
     electron_mass = 0.510998950                                                                 #electron mass in MeV
     momentum = ((beam_energy_MeV)**2 - (electron_mass)**2)**(0.5)                               #relativistic momentum of electron beam
@@ -270,6 +358,9 @@ if __name__ == '__main__':
             data_aluminum = pd.read_csv(files_list_amen[1], sep=',', skiprows=(1), names= ['Event', 'Timestamp', 'Width', 'Intensity', 'Stage x Position', 'Material Thickness'])
             data_list_aluminum = separate_data(data_aluminum, list_of_x_positions)
             data_list_aluminum = drop_unphysical_data(data_list_aluminum)
+            data_aluminum_2 = pd.read_csv(files_list_amen[2], sep=',', skiprows=(1), names= ['Event', 'Timestamp', 'Width', 'Intensity', 'Stage x Position', 'Material Thickness'])
+            data_list_aluminum_2 = separate_data(data_aluminum_2, list_of_x_positions)
+            data_list_aluminum_2 = drop_unphysical_data(data_list_aluminum_2)                   
             
             means_list_nickel = ([])
             std_list_nickel = ([])
@@ -277,9 +368,16 @@ if __name__ == '__main__':
             means_list_aluminum = ([])
             std_list_aluminum = ([])
             N_list_aluminum = ([])
+            means_list_aluminum_1 = ([])
+            std_list_aluminum_1 = ([])
+            N_list_aluminum_1 = ([])
+            means_list_aluminum_2 = ([])
+            std_list_aluminum_2 = ([])
+            N_list_aluminum_2 = ([])
             
             reference_nickel = ([])
             reference_aluminum = ([])
+            reference_aluminum_2 = ([])
             data_ref_nickel = data_list_nickel[0]
             reference_nickel.append(data_ref_nickel.loc[:, 'Width'].mean()) 
             reference_nickel.append(data_ref_nickel.loc[:, 'Width'].std())
@@ -288,17 +386,35 @@ if __name__ == '__main__':
             reference_aluminum.append(data_ref_aluminum.loc[:, 'Width'].mean())
             reference_aluminum.append(data_ref_aluminum.loc[:, 'Width'].std())
             reference_aluminum.append(data_ref_aluminum.shape[0])
-
+            data_ref_aluminum_2 = data_list_aluminum_2[0]
+            reference_aluminum_2.append(data_ref_aluminum_2.loc[:, 'Width'].mean())
+            reference_aluminum_2.append(data_ref_aluminum_2.loc[:, 'Width'].std())
+            reference_aluminum_2.append(data_ref_aluminum_2.shape[0])
+            
+            #tested it out and until this point of the code none of the dataframes has nan values
             
             for i in range (1, len(data_list)):
-                means_list_nickel.append(get_mean(data_list_nickel[i], reference_nickel)[0])
-                std_list_nickel.append(get_mean(data_list_nickel[i], reference_nickel)[1])
-                N_list_nickel.append(get_mean(data_list_nickel[i], reference_nickel)[2])
-                means_list_aluminum.append(get_mean(data_list_aluminum[i], reference_aluminum)[0])
-                std_list_aluminum.append(get_mean(data_list_aluminum[i], reference_aluminum)[1])
-                N_list_aluminum.append(get_mean(data_list_aluminum[i], reference_aluminum)[2])
+                print(i)
+                help_nickel = get_mean(data_list_nickel[i], reference_nickel)
+                means_list_nickel.append(help_nickel[0])
+                std_list_nickel.append(help_nickel[1])
+                N_list_nickel.append(help_nickel[2])
+                help_aluminum = get_mean_alu(data_list_aluminum[i], data_list_aluminum_2[i], reference_aluminum, reference_aluminum_2)
+                #help_aluminum_1 = get_mean(data_list_aluminum[i], reference_aluminum)
+                #help_aluminum_2 = get_mean(data_list_aluminum_2[i], reference_aluminum_2)
+                means_list_aluminum.append(help_aluminum[0])
+                std_list_aluminum.append(help_aluminum[1])
+                N_list_aluminum.append(help_aluminum[2])
+                #means_list_aluminum_1.append(help_aluminum_1[0])
+                #std_list_aluminum_1.append(help_aluminum_1[1])
+                #N_list_aluminum_1.append(help_aluminum_1[2])
+                #means_list_aluminum_2.append(help_aluminum_2[0])
+                #std_list_aluminum_2.append(help_aluminum_2[1])
+                #N_list_aluminum_2.append(help_aluminum_2[2])
                 
             calibrationplot(list_of_material_thicknesses_nickel, list_of_material_thicknesses_aluminum, means_list_nickel, means_list_aluminum, std_list_nickel, std_list_aluminum, N_list_nickel, N_list_aluminum)
+            #calibrationplot_both_alus(list_of_material_thicknesses_nickel, list_of_material_thicknesses_aluminum, means_list_nickel, means_list_aluminum_1, means_list_aluminum_2, std_list_nickel, std_list_aluminum_1, std_list_aluminum_2, N_list_nickel, N_list_aluminum_1, N_list_aluminum_2)
+    
     end_time = time.time()
     print("Computing time was:  ", round(end_time - start_time, 2), " s")
     print("Which in minutes is: ", round((end_time - start_time)/60, 2) , " min")
